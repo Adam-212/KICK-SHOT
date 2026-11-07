@@ -1,0 +1,184 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>KICK-SHOT</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#071b16;color:white;font-family:Arial;text-align:center}
+h1{color:#7cff9b;margin:12px}
+#info{display:flex;justify-content:space-around;font-weight:bold;margin:12px}
+canvas{width:100%;max-width:700px;height:auto;border:3px solid #8cff9b;border-radius:12px;touch-action:none;background:#168447}
+button{background:#7cff9b;color:#062016;border:0;border-radius:12px;padding:12px 24px;font-size:17px;font-weight:bold;margin:10px}
+#message{font-size:19px;min-height:28px;font-weight:bold}
+</style>
+</head>
+<body>
+<h1>⚽ KICK-SHOT</h1>
+<div id="info">
+<span>LEVEL <b id="level">1</b>/100</span>
+<span>GOALS <b id="goals">0</b></span>
+<span>❤️ ∞</span>
+</div>
+<canvas id="game" width="700" height="500"></canvas>
+<div id="message">Swipe from the ball towards the goal!</div>
+<button id="next" hidden>Next level ➜</button>
+<script>
+const c=document.getElementById('game');
+const ctx=c.getContext('2d');
+const msg=document.getElementById('message');
+const nextBtn=document.getElementById('next');
+let saved={level:1,goals:0};
+try{saved=Object.assign(saved,JSON.parse(localStorage.getItem('kickshot_save')||'{}'))}catch(e){}
+let level=Math.min(100,Math.max(1,saved.level));
+let goals=saved.goals||0;
+let ball={x:350,y:425,vx:0,vy:0,r:12};
+let keeper={x:350,y:145,w:90,h:22};
+let goal={x:350,y:105,w:270,h:90};
+let moving=0,shot=false,drag=false,start=null,aim=null;
+let scored=false,resultTimer=0;
+function save(){
+try{localStorage.setItem('kickshot_save',JSON.stringify({level,goals}))}catch(e){}
+}
+function info(){
+document.getElementById('level').textContent=level;
+document.getElementById('goals').textContent=goals;
+}
+function reset(){
+ball={x:350,y:425,vx:0,vy:0,r:12};
+shot=false;drag=false;start=null;aim=null;scored=false;
+nextBtn.hidden=true;
+msg.textContent='Swipe from the ball towards the goal!';
+}
+function field(){
+ctx.fillStyle='#168447';ctx.fillRect(0,0,700,500);
+for(let y=0;y<500;y+=100){
+ctx.fillStyle='rgba(255,255,255,.035)';
+ctx.fillRect(0,y,700,50);
+}
+ctx.strokeStyle='rgba(255,255,255,.65)';
+ctx.lineWidth=3;
+ctx.strokeRect(35,25,630,450);
+ctx.beginPath();ctx.arc(350,250,75,0,Math.PI*2);ctx.stroke();
+ctx.strokeRect(185,25,330,130);
+ctx.strokeRect(255,25,190,70);
+}
+function drawGoal(){
+ctx.fillStyle='#eee';
+ctx.fillRect(goal.x-goal.w/2,goal.y,goal.w,12);
+ctx.fillRect(goal.x-goal.w/2,goal.y,8,100);
+ctx.fillRect(goal.x+goal.w/2-8,goal.y,8,100);
+ctx.strokeStyle='rgba(255,255,255,.45)';
+ctx.lineWidth=2;
+for(let x=goal.x-goal.w/2+15;x<goal.x+goal.w/2;x+=25){
+ctx.beginPath();ctx.moveTo(x,goal.y+12);ctx.lineTo(x,goal.y+85);ctx.stroke();
+}
+for(let y=goal.y+30;y<goal.y+90;y+=25){
+ctx.beginPath();ctx.moveTo(goal.x-goal.w/2,y);ctx.lineTo(goal.x+goal.w/2,y);ctx.stroke();
+}
+}
+function drawKeeper(){
+ctx.fillStyle='#f5c542';
+ctx.fillRect(keeper.x-keeper.w/2,keeper.y,keeper.w,keeper.h);
+ctx.fillStyle='#142b91';
+ctx.fillRect(keeper.x-keeper.w/2,keeper.y+keeper.h,keeper.w,30);
+ctx.fillStyle='white';
+ctx.beginPath();ctx.arc(keeper.x,keeper.y-12,15,0,Math.PI*2);ctx.fill();
+ctx.fillStyle='#222';
+ctx.beginPath();
+ctx.arc(keeper.x-5,keeper.y-14,2,0,7);
+ctx.arc(keeper.x+5,keeper.y-14,2,0,7);
+ctx.fill();
+}
+function drawBall(){
+ctx.fillStyle='white';
+ctx.beginPath();ctx.arc(ball.x,ball.y,ball.r,0,7);ctx.fill();
+ctx.fillStyle='#111';
+ctx.beginPath();ctx.arc(ball.x,ball.y,5,0,7);ctx.fill();
+ctx.strokeStyle='#111';ctx.lineWidth=2;ctx.stroke();
+}
+function draw(){
+ctx.clearRect(0,0,700,500);
+field();drawGoal();drawKeeper();drawBall();
+if(drag&&aim){
+ctx.strokeStyle='white';ctx.lineWidth=5;
+ctx.beginPath();ctx.moveTo(ball.x,ball.y);
+ctx.lineTo(aim.x,aim.y);ctx.stroke();
+}
+}
+function tick(){
+moving+=0.018+level*0.00015;
+goal.x=350+Math.sin(moving)*Math.max(15,135-level*.65);
+if(!shot){
+keeper.x+=(350+Math.sin(moving*1.25)*Math.max(5,65-level*.35)-keeper.x)*.04;
+}else{
+ball.x+=ball.vx;ball.y+=ball.vy;
+ball.vx*=.994;ball.vy*=.994;
+let target=ball.x;
+if(ball.vy<0)target=ball.x+ball.vx*((ball.y-keeper.y)/Math.max(1,-ball.vy));
+let speed=Math.min(.13,.035+level*.00045);
+let min=goal.x-goal.w/2+keeper.w/2;
+let max=goal.x+goal.w/2-keeper.w/2;
+keeper.x+=(Math.max(min,Math.min(max,target))-keeper.x)*speed;
+if(!scored&&ball.y<goal.y+20&&ball.y>goal.y-15&&Math.abs(ball.x-goal.x)<goal.w/2-10){
+if(Math.abs(ball.x-keeper.x)<keeper.w/2+ball.r&&ball.y>keeper.y-20){
+ball.vy=Math.abs(ball.vy)*.65+3;
+ball.vx+=(ball.x-keeper.x)*.12;
+msg.textContent='🧤 SAVED! Try again!';
+shot=false;resultTimer=35;
+}else{
+scored=true;goals++;
+level=Math.min(100,level+1);
+save();info();
+msg.textContent='⚽ GOOOOAL!';
+nextBtn.hidden=false;
+}
+}
+if(ball.y<0||ball.x<0||ball.x>700||ball.y>500){
+if(!scored){
+msg.textContent='MISS! Try another shot!';
+shot=false;resultTimer=35;
+}
+}
+}
+if(resultTimer>0){
+resultTimer--;
+if(resultTimer===0&&!scored)reset();
+}
+draw();
+requestAnimationFrame(tick);
+}
+function point(e){
+let r=c.getBoundingClientRect();
+return{x:(e.clientX-r.left)*700/r.width,y:(e.clientY-r.top)*500/r.height};
+}
+c.addEventListener('pointerdown',e=>{
+if(shot||!nextBtn.hidden)return;
+let p=point(e);
+if(Math.hypot(p.x-ball.x,p.y-ball.y)<65){
+drag=true;start=p;aim=p;c.setPointerCapture(e.pointerId);
+}
+});
+c.addEventListener('pointermove',e=>{
+if(drag)aim=point(e);
+});
+c.addEventListener('pointerup',e=>{
+if(!drag)return;
+let p=point(e);
+let dx=start.x-p.x,dy=start.y-p.y;
+drag=false;
+if(dy>8){
+ball.vx=Math.max(-13,Math.min(13,dx*.105));
+ball.vy=Math.max(-19,Math.min(-6,dy*.105));
+shot=true;msg.textContent='SHOOT!';
+}
+});
+nextBtn.addEventListener('click',()=>{
+reset();info();
+});
+info();draw();requestAnimationFrame(tick);
+</script>
+</body>
+</html>
